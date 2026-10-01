@@ -82,6 +82,8 @@ import com.mkx.hrttracker.ui.dismissInputAndRun
 import com.mkx.hrttracker.ui.hideBottomSheet
 import com.mkx.hrttracker.ui.theme.HrtTrackerTheme
 import com.mkx.hrttracker.util.LocalDateFormatter
+import com.mkx.hrttracker.util.calibrationAnalyteFullNameRes
+import com.mkx.hrttracker.util.calibrationAnalyteLabel
 import com.mkx.hrttracker.util.calibrationUnitLabel
 import com.mkx.hrttracker.util.dateLabelFormatter
 import com.mkx.hrttracker.util.formatEditorZoneLabel

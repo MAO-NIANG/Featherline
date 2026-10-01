@@ -83,6 +83,8 @@ import com.mkx.hrttracker.ui.components.paddingBehindTopAppBar
 import com.mkx.hrttracker.ui.components.pinnedTopAppBarScrollBehavior
 import com.mkx.hrttracker.ui.components.topAppBarScrollToTop
 import com.mkx.hrttracker.ui.theme.HrtTrackerTheme
+import com.mkx.hrttracker.util.calibrationAnalyteFullNameRes
+import com.mkx.hrttracker.util.calibrationAnalyteLabel
 import com.mkx.hrttracker.util.calibrationUnitLabel
 import kotlinx.coroutines.launch
 import java.time.Instant

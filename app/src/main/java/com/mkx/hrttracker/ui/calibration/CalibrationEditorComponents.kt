@@ -68,6 +68,8 @@ import com.mkx.hrttracker.ui.components.HrtPill
 import com.mkx.hrttracker.ui.components.HrtPillSize
 import com.mkx.hrttracker.ui.components.bringWholeFieldIntoView
 import com.mkx.hrttracker.ui.theme.HrtTrackerTheme
+import com.mkx.hrttracker.util.calibrationAnalyteFullNameRes
+import com.mkx.hrttracker.util.calibrationAnalyteLabel
 import com.mkx.hrttracker.util.calibrationUnitLabel
 
 @Composable

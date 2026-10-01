@@ -93,6 +93,8 @@ import com.mkx.hrttracker.ui.theme.HrtTrackerTheme
 import com.mkx.hrttracker.util.CalibrationPanelDateTimeFormatters
 import com.mkx.hrttracker.util.CalibrationPanelDateTimeLabels
 import com.mkx.hrttracker.util.LocalDateFormatter
+import com.mkx.hrttracker.util.calibrationAnalyteFullNameRes
+import com.mkx.hrttracker.util.calibrationAnalyteLabel
 import com.mkx.hrttracker.util.calibrationMonthHeaderFormatter
 import com.mkx.hrttracker.util.calibrationPanelDateTimeFormatters
 import com.mkx.hrttracker.util.calibrationUnitLabel
@@ -1077,21 +1079,6 @@ private fun formatCalibrationResultSummary(
                 unit = formatCalibrationUnitLabel(result.unitSnapshot),
             )
         }
-    }
-}
-
-internal fun calibrationAnalyteLabel(analyteKey: BloodAnalyteKey): String {
-    return analyteKey.storageValue.uppercase()
-}
-
-internal fun calibrationAnalyteFullNameRes(analyteKey: BloodAnalyteKey): Int {
-    return when (analyteKey) {
-        BloodAnalyteKey.E2 -> R.string.medication_category_estradiol
-        BloodAnalyteKey.T -> R.string.medication_category_testosterone
-        BloodAnalyteKey.PROG -> R.string.settings_calibration_analyte_prog
-        BloodAnalyteKey.PRL -> R.string.settings_calibration_analyte_prl
-        BloodAnalyteKey.FSH -> R.string.settings_calibration_analyte_fsh
-        BloodAnalyteKey.LH -> R.string.settings_calibration_analyte_lh
     }
 }
 
