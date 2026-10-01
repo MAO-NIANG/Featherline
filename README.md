@@ -37,6 +37,7 @@ Featherline logs doses across injection, patch, gel, oral, and sublingual routes
 - Optional medicine stock tracking with low-stock warnings and schedule-aware "days remaining" estimates
 - Estradiol pharmacokinetic projection from your dose history
 - Blood test catalog with automatic unit conversion (pg/mL ↔ pmol/L, ng/dL ↔ nmol/L)
+- Export your history as CSV, as a formatted PDF report, or as JSON for another HRT app
 - Encrypted, compressed backup format with restore validation
 - App lock with biometric unlock
 - Home-screen quick-log widget in two sizes, with progress, next-dose, and tap-to-log

@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import com.mkx.hrttracker.data.backup.BackupExportService
 import com.mkx.hrttracker.data.backup.BackupRestoreService
+import com.mkx.hrttracker.data.export.DataExportService
 import com.mkx.hrttracker.data.importer.ExternalImportCommitResult
 import com.mkx.hrttracker.data.importer.ExternalImportFatalException
 import com.mkx.hrttracker.data.importer.ExternalImportParseResult
@@ -70,6 +71,7 @@ class SettingsViewModelTest {
     private val backupRestoreService: BackupRestoreService = mockk()
     private val externalImportService: ExternalImportService = mockk()
     private val diagnosticsExportService: AppDiagnosticsExportService = mockk()
+    private val dataExportService: DataExportService = mockk()
     private val widgetAppearanceRepository: WidgetAppearanceRepository = mockk()
     private val dispatcher = StandardTestDispatcher()
 
@@ -562,6 +564,7 @@ class SettingsViewModelTest {
             backupRestoreService = backupRestoreService,
             externalImportService = externalImportService,
             diagnosticsExportService = diagnosticsExportService,
+            dataExportService = dataExportService,
             widgetAppearanceRepository = widgetAppearanceRepository,
         )
     }

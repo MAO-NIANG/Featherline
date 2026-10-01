@@ -22,6 +22,8 @@ download links, see the [repo README](../README.md).
   factor table, validation pattern.
 - [Backup format](backup-format.md) — v3 compressed backup spec,
   restore validation, forward-compatibility policy.
+- [Data export](data-export.md) — the CSV, PDF and JSON exports, the
+  Oyama interchange mapping, and what each format leaves out.
 
 ## Operations
 

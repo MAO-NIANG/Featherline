@@ -184,6 +184,25 @@ holds the external-tracker import parser, import-domain models, and
 service that maps compatible imported histories into the app's local
 medicine, log, and blood-test repositories.
 
+[`data/export`](https://github.com/mkx173/Featherline/tree/main/app/src/main/java/com/mkx/hrttracker/data/export)
+holds the plaintext exports: `DataExportService` (aggregates the
+repositories into a `DataExportBundle` of localized rows, writes a
+prepared payload into `cacheDir`, and copies it to a SAF document),
+`DataExportCsvEncoder` (RFC 4180), `DataExportPdfLayout` and
+`DataExportPdfRenderer` (pagination and drawing via the platform
+`PdfDocument`), `OyamaJsonExporter` (the Oyama interchange shape), and
+`DataExportLabels` (every localized string, resolved once so the
+encoders stay free of `Context` and testable on the JVM). Detailed in
+[data-export.md](data-export.md).
+
+`data/export` depends on `data/backup` for one thing: the Featherline
+snapshot JSON is produced by `BackupExportService.buildBackupSnapshotJson`,
+which is `internal` and therefore reachable only while both packages live in
+the same Gradle module. Reusing the serializer is deliberate — it is the exact
+object the restore path consumes, so a second copy of the schema would drift
+the moment `BackupSnapshot` changed. If `data/export` ever moves to its own
+module, that call is the one thing that breaks.
+
 ## Within `model/`
 
 - [`model/medication`](https://github.com/mkx173/Featherline/tree/8e46ab59d3328a389c20e588bd1e62174dcb8b19/app/src/main/java/com/mkx/hrttracker/model/medication) — group, schedule, slot, and log

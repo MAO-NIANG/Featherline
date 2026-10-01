@@ -89,6 +89,12 @@ import androidx.lifecycle.lifecycleScope
 import com.mkx.hrttracker.BuildConfig
 import com.mkx.hrttracker.R
 import com.mkx.hrttracker.data.backup.IncompatibleBackupFileException
+import com.mkx.hrttracker.data.export.DataExportFormat
+import com.mkx.hrttracker.data.export.DataExportService
+import com.mkx.hrttracker.data.export.DataExportSummary
+import com.mkx.hrttracker.data.export.EmptyDataExportException
+import com.mkx.hrttracker.data.export.JsonExportFormat
+import com.mkx.hrttracker.data.export.PreparedDataExport
 import com.mkx.hrttracker.model.personalization.UserProfile
 import com.mkx.hrttracker.model.personalization.WeightUnit
 import com.mkx.hrttracker.model.settings.AppLanguageOption
@@ -177,6 +183,16 @@ fun SettingsScreen(
     var hasRequestedNotificationPermission by rememberSaveable { mutableStateOf(false) }
     var isDiagnosticsExportInProgress by rememberSaveable { mutableStateOf(false) }
     var showBackupPasswordDialog by rememberSaveable { mutableStateOf(false) }
+    var showDataExportJsonDialog by rememberSaveable { mutableStateOf(false) }
+    var dataExportJsonDialogMode by rememberSaveable {
+        mutableStateOf(DataExportJsonDialogMode.SAVE)
+    }
+    var selectedJsonExportFormat by rememberSaveable {
+        mutableStateOf(JsonExportFormat.OYAMA)
+    }
+    var dataExportSummary by remember { mutableStateOf<DataExportSummary?>(null) }
+    val pendingPreparedDataExport = uiState.pendingPreparedDataExport
+    val isDataExportInProgress = uiState.isDataExportInProgress
     val isBackupExportInProgress = uiState.isBackupExportInProgress
     val isBackupRestoreInProgress = uiState.isBackupRestoreInProgress
     val pendingRestoreRequest = uiState.pendingRestoreRequest
@@ -459,6 +475,173 @@ fun SettingsScreen(
         }
     }
 
+    val dataExportEmptyMessage = stringResource(R.string.settings_export_empty)
+    val dataExportFailedMessage = stringResource(R.string.settings_export_failed)
+    val dataExportCopySuccessMessage = stringResource(R.string.settings_export_json_copy_success)
+    val dataExportCopyFailedMessage = stringResource(R.string.settings_export_json_copy_failed)
+    val dataExportCopyTooLargeMessage = stringResource(R.string.settings_export_json_copy_too_large)
+
+    // An Oyama export carries only what that format can express, so its message
+    // reports the surviving counts and names the shortfall rather than implying
+    // everything was written.
+    suspend fun buildDataExportSuccessMessage(
+        exportedFormat: DataExportFormat,
+        exportedJsonFormat: JsonExportFormat?,
+    ): String {
+        val summary = runCatching { viewModel.loadDataExportSummary() }.getOrNull()
+            ?: return dataExportFailedMessage
+        val isOyama = exportedFormat == DataExportFormat.JSON &&
+            exportedJsonFormat == JsonExportFormat.OYAMA
+        val doses = if (isOyama) summary.representableDoseCount else summary.doseCount
+        val labs = if (isOyama) summary.representableLabCount else summary.labCount
+        val omitted = if (isOyama) summary.omittedDoseCount + summary.omittedLabCount else 0
+        return if (omitted > 0) {
+            context.getString(
+                R.string.settings_export_success_with_omissions,
+                doses,
+                labs,
+                omitted,
+            )
+        } else {
+            context.getString(R.string.settings_export_success, doses, labs)
+        }
+    }
+
+    // Each format needs its own launcher because CreateDocument's MIME type is
+    // fixed at construction and decides the picker's filter and the file's
+    // extension. All three share the same completion path below.
+    fun completeDataExport(
+        destinationUri: Uri?,
+        exportedFormat: DataExportFormat,
+        exportedJsonFormat: JsonExportFormat?,
+    ) {
+        val prepared = uiState.pendingPreparedDataExport?.let { pending ->
+            PreparedDataExport(
+                displayName = pending.displayName,
+                tempFilePath = pending.tempFilePath,
+            )
+        }
+        if (destinationUri == null) {
+            // Backing out of the picker is a decision, not a failure: drop the
+            // temp file and stay quiet.
+            if (prepared != null) {
+                pickerResultScope.launch {
+                    viewModel.discardPreparedDataExport(prepared)
+                    viewModel.clearPendingPreparedDataExport()
+                }
+            }
+            return
+        }
+        if (prepared == null) {
+            viewModel.clearPendingPreparedDataExport()
+            Toast.makeText(context, dataExportFailedMessage, Toast.LENGTH_SHORT).show()
+            return
+        }
+        pickerResultScope.launch {
+            viewModel.setDataExportInProgress(true)
+            try {
+                viewModel.exportPreparedDataExport(destinationUri, prepared)
+                Toast.makeText(
+                    context,
+                    buildDataExportSuccessMessage(exportedFormat, exportedJsonFormat),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } catch (_: Exception) {
+                Toast.makeText(context, dataExportFailedMessage, Toast.LENGTH_SHORT).show()
+            } finally {
+                viewModel.setDataExportInProgress(false)
+                viewModel.clearPendingPreparedDataExport()
+            }
+        }
+    }
+
+    val csvDataExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(DataExportService.CSV_MIME_TYPE)
+    ) { destinationUri ->
+        completeDataExport(destinationUri, DataExportFormat.CSV, null)
+    }
+    val pdfDataExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(DataExportService.PDF_MIME_TYPE)
+    ) { destinationUri ->
+        completeDataExport(destinationUri, DataExportFormat.PDF, null)
+    }
+    val jsonDataExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(DataExportService.JSON_MIME_TYPE)
+    ) { destinationUri ->
+        completeDataExport(destinationUri, DataExportFormat.JSON, selectedJsonExportFormat)
+    }
+
+    fun startDataExport(
+        exportedFormat: DataExportFormat,
+        exportedJsonFormat: JsonExportFormat?,
+    ) {
+        if (uiState.isDataExportInProgress) {
+            return
+        }
+        coroutineScope.launch {
+            viewModel.setDataExportInProgress(true)
+            try {
+                val prepared = viewModel.prepareDataExport(exportedFormat, exportedJsonFormat)
+                viewModel.setPendingPreparedDataExport(
+                    displayName = prepared.displayName,
+                    tempFilePath = prepared.tempFilePath,
+                )
+                val launcher = when (exportedFormat) {
+                    DataExportFormat.CSV -> csvDataExportLauncher
+                    DataExportFormat.PDF -> pdfDataExportLauncher
+                    DataExportFormat.JSON -> jsonDataExportLauncher
+                }
+                launcher.launch(prepared.displayName)
+            } catch (_: EmptyDataExportException) {
+                viewModel.clearPendingPreparedDataExport()
+                Toast.makeText(context, dataExportEmptyMessage, Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                viewModel.clearPendingPreparedDataExport()
+                Toast.makeText(context, dataExportFailedMessage, Toast.LENGTH_SHORT).show()
+            } finally {
+                viewModel.setDataExportInProgress(false)
+            }
+        }
+    }
+
+    fun copyJsonToClipboard() {
+        coroutineScope.launch {
+            try {
+                val json = viewModel.buildJsonExportText(selectedJsonExportFormat)
+                if (json.length > DataExportService.MAX_CLIPBOARD_JSON_CHARS) {
+                    // The clipboard is Binder-backed; an oversized payload fails
+                    // opaquely on many devices, so steer to the file export instead.
+                    Toast.makeText(context, dataExportCopyTooLargeMessage, Toast.LENGTH_LONG)
+                        .show()
+                    return@launch
+                }
+                val copied = runCatching {
+                    context.getSystemService(ClipboardManager::class.java)
+                        ?.setPrimaryClip(ClipData.newPlainText(JSON_CLIP_LABEL, json))
+                }
+                Toast.makeText(
+                    context,
+                    if (copied.getOrNull() != null) {
+                        dataExportCopySuccessMessage
+                    } else {
+                        dataExportCopyFailedMessage
+                    },
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } catch (_: Exception) {
+                Toast.makeText(context, dataExportCopyFailedMessage, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Counts for the dialog's omission warning, fetched when it opens and before
+    // the user commits to anything.
+    LaunchedEffect(showDataExportJsonDialog) {
+        if (showDataExportJsonDialog) {
+            dataExportSummary = runCatching { viewModel.loadDataExportSummary() }.getOrNull()
+        }
+    }
+
     LaunchedEffect(configuration) {
         viewModel.refreshAppLanguageOption()
     }
@@ -590,10 +773,37 @@ fun SettingsScreen(
                 }
             }
         },
+        onExportCsvClick = { startDataExport(DataExportFormat.CSV, null) },
+        onExportPdfClick = { startDataExport(DataExportFormat.PDF, null) },
+        onExportJsonClick = { dialogMode ->
+            dataExportJsonDialogMode = dialogMode
+            dataExportSummary = null
+            showDataExportJsonDialog = true
+        },
+        isDataExportInProgress = isDataExportInProgress,
         onCalibrationClick = onCalibrationClick,
         scrollToTopSignal = scrollToTopSignal,
         modifier = modifier
     )
+
+    if (showDataExportJsonDialog && !isAppLocked) {
+        DataExportJsonDialog(
+            mode = dataExportJsonDialogMode,
+            selectedFormat = selectedJsonExportFormat,
+            onSelectFormat = { selectedJsonExportFormat = it },
+            summary = dataExportSummary,
+            isBusy = isDataExportInProgress,
+            onDismissRequest = { showDataExportJsonDialog = false },
+            onConfirm = {
+                showDataExportJsonDialog = false
+                if (dataExportJsonDialogMode == DataExportJsonDialogMode.SAVE) {
+                    startDataExport(DataExportFormat.JSON, selectedJsonExportFormat)
+                } else {
+                    copyJsonToClipboard()
+                }
+            },
+        )
+    }
 
     uiState.pendingExternalImportPreview?.takeUnless { isAppLocked }?.let { preview ->
         ExternalImportReviewSheet(
@@ -981,6 +1191,10 @@ internal fun SettingsScreenContent(
     onBackupToFileClick: () -> Unit,
     onRestoreFromFileClick: () -> Unit,
     onImportExternalTrackerClick: () -> Unit,
+    onExportCsvClick: () -> Unit,
+    onExportPdfClick: () -> Unit,
+    onExportJsonClick: (DataExportJsonDialogMode) -> Unit,
+    isDataExportInProgress: Boolean,
     showDiagnosticsExport: Boolean,
     onExportDiagnosticLogsClick: () -> Unit,
     onCalibrationClick: () -> Unit,
@@ -1578,6 +1792,78 @@ internal fun SettingsScreenContent(
                                 SettingsLeadingIconSlot(
                                     painter = painterResource(R.drawable.ic_download),
                                     iconSize = 20.dp
+                                )
+                            },
+                            trailingContent = {
+                                SettingsChevronTrailingIcon()
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(dimensionResource(R.dimen.padding_medium)))
+
+                HrtSection(title = stringResource(R.string.settings_export_data)) {
+                    item {
+                        SettingsSegmentedListItem(
+                            title = stringResource(R.string.settings_export_csv),
+                            supportingText = stringResource(R.string.settings_export_csv_supporting),
+                            enabled = !isDataExportInProgress,
+                            onClick = onExportCsvClick,
+                            leadingContent = {
+                                SettingsLeadingIconSlot(
+                                    painter = painterResource(R.drawable.ic_table_view)
+                                )
+                            },
+                            trailingContent = {
+                                SettingsChevronTrailingIcon()
+                            }
+                        )
+                    }
+
+                    item {
+                        SettingsSegmentedListItem(
+                            title = stringResource(R.string.settings_export_pdf),
+                            supportingText = stringResource(R.string.settings_export_pdf_supporting),
+                            enabled = !isDataExportInProgress,
+                            onClick = onExportPdfClick,
+                            leadingContent = {
+                                SettingsLeadingIconSlot(
+                                    painter = painterResource(R.drawable.ic_document_report)
+                                )
+                            },
+                            trailingContent = {
+                                SettingsChevronTrailingIcon()
+                            }
+                        )
+                    }
+
+                    item {
+                        SettingsSegmentedListItem(
+                            title = stringResource(R.string.settings_export_json),
+                            supportingText = stringResource(R.string.settings_export_json_supporting),
+                            enabled = !isDataExportInProgress,
+                            onClick = { onExportJsonClick(DataExportJsonDialogMode.SAVE) },
+                            leadingContent = {
+                                SettingsLeadingIconSlot(
+                                    painter = painterResource(R.drawable.ic_data_object)
+                                )
+                            },
+                            trailingContent = {
+                                SettingsChevronTrailingIcon()
+                            }
+                        )
+                    }
+
+                    item {
+                        SettingsSegmentedListItem(
+                            title = stringResource(R.string.settings_copy_json),
+                            supportingText = stringResource(R.string.settings_copy_json_supporting),
+                            enabled = !isDataExportInProgress,
+                            onClick = { onExportJsonClick(DataExportJsonDialogMode.COPY) },
+                            leadingContent = {
+                                SettingsLeadingIconSlot(
+                                    painter = painterResource(R.drawable.ic_content_copy)
                                 )
                             },
                             trailingContent = {
@@ -2206,6 +2492,10 @@ private fun SettingsScreenPreview() {
             onBackupToFileClick = { },
             onRestoreFromFileClick = { },
             onImportExternalTrackerClick = { },
+            onExportCsvClick = { },
+            onExportPdfClick = { },
+            onExportJsonClick = { },
+            isDataExportInProgress = false,
             showDiagnosticsExport = true,
             onExportDiagnosticLogsClick = { },
             onCalibrationClick = { },
@@ -2215,6 +2505,9 @@ private fun SettingsScreenPreview() {
 
 private const val MINIMUM_BACKUP_PASSWORD_LENGTH = 6
 private const val DIAGNOSTICS_EXPORT_MIME_TYPE = "text/plain"
+
+/** Clip label for a copied JSON export; visible in clipboard-history UIs. */
+private const val JSON_CLIP_LABEL = "Featherline JSON export"
 private val EXTERNAL_IMPORT_MIME_TYPES = arrayOf(
     "application/json",
     "text/json",

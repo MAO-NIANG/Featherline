@@ -286,6 +286,25 @@ Splitting at step 7 lets the password dialog and the directory picker
 run as separate user steps without holding plaintext or unsealed keys
 between them.
 
+## Unencrypted exports
+
+Settings → Export data can write the same `BackupSnapshot` schema the
+backup uses — same `snapshotVersion`, produced by the same
+`BackupExportService.buildBackupSnapshotJson` — as a plaintext JSON file
+named `featherline-backup-plaintext-<timestamp>.json`. It is complete and
+lossless.
+
+It **cannot be restored in this app.** The restore path accepts only the v3
+envelope: it looks for the `HRTBKP1` magic, the Argon2id KDF id and the
+AES-GCM cipher id, and reports anything else as "selected file is not a
+compatible backup". A plaintext snapshot therefore reads as an incompatible
+file rather than as a corrupt one, which is the intended signal — the file is
+sound, it is simply not a backup. Restoring is what **Backup to file** is for.
+
+The plaintext export reuses the backup serializer rather than duplicating the
+schema, so a future change to `BackupSnapshot` flows through it automatically.
+See [data-export.md](data-export.md) for the rest of the export feature.
+
 ## Restore flow
 
 [`BackupRestoreService.kt`](https://github.com/mkx173/Featherline/blob/main/app/src/main/java/com/mkx/hrttracker/data/backup/BackupRestoreService.kt)

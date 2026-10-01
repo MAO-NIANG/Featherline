@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Settings → Export data writes your history to a file: CSV for a spreadsheet, a formatted PDF report you can hand to a clinician, and JSON for moving your data into another HRT app.
+- The JSON export can also be copied straight to the clipboard.
+- Two JSON shapes are offered. An Oyama-compatible one is readable by Oyama's HRT Tracker and compatible apps, and the dialog says up front how many records that format cannot carry before you commit to it. A Featherline snapshot one is complete and lossless, but cannot be restored in this app — use Backup to file for that.
 - A new small home-screen widget shows a chosen Journal date and its running day count.
 - You can pin any Journal date to your home screen as a shortcut that shows its day count and opens straight to that date's milestones.
 - The milestones timeline now marks every 100 days, interleaved with anniversaries.

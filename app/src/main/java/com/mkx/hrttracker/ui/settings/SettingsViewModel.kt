@@ -9,6 +9,12 @@ import com.mkx.hrttracker.data.backup.BackupExportService
 import com.mkx.hrttracker.data.backup.BackupExportedFile
 import com.mkx.hrttracker.data.backup.BackupRestoreService
 import com.mkx.hrttracker.data.backup.PreparedBackupExport
+import com.mkx.hrttracker.data.export.DataExportExportedFile
+import com.mkx.hrttracker.data.export.DataExportFormat
+import com.mkx.hrttracker.data.export.DataExportService
+import com.mkx.hrttracker.data.export.DataExportSummary
+import com.mkx.hrttracker.data.export.JsonExportFormat
+import com.mkx.hrttracker.data.export.PreparedDataExport
 import com.mkx.hrttracker.data.importer.ExternalImportCommitResult
 import com.mkx.hrttracker.data.importer.ExternalImportPreview
 import com.mkx.hrttracker.data.importer.ExternalImportService
@@ -63,6 +69,7 @@ class SettingsViewModel @Inject constructor(
     private val backupRestoreService: BackupRestoreService,
     private val externalImportService: ExternalImportService,
     private val diagnosticsExportService: AppDiagnosticsExportService,
+    private val dataExportService: DataExportService,
     private val widgetAppearanceRepository: WidgetAppearanceRepository,
 ) : ViewModel() {
     private val pendingPrompt = MutableStateFlow<AuthenticationPromptRequest?>(null)
@@ -78,6 +85,8 @@ class SettingsViewModel @Inject constructor(
     private val isBackupRestoreInProgress = MutableStateFlow(false)
     private val isExternalImportInProgress = MutableStateFlow(false)
     private val isWeightMutationInProgress = MutableStateFlow(false)
+    private val pendingPreparedDataExport = MutableStateFlow<PendingPreparedDataExport?>(null)
+    private val isDataExportInProgress = MutableStateFlow(false)
     private val weightEvents = MutableSharedFlow<WeightMutationEvent>(
         replay = 1,
         extraBufferCapacity = 4,
@@ -113,6 +122,8 @@ class SettingsViewModel @Inject constructor(
         isBackupRestoreInProgress,
         isExternalImportInProgress,
         isWeightMutationInProgress,
+        pendingPreparedDataExport,
+        isDataExportInProgress,
     ) { values ->
         val settingsState = values[0] as SettingsState
         val profile = values[1] as UserProfile?
@@ -125,6 +136,8 @@ class SettingsViewModel @Inject constructor(
         val restoreInProgress = values[8] as Boolean
         val externalImportInProgress = values[9] as Boolean
         val weightInProgress = values[10] as Boolean
+        val preparedDataExport = values[11] as PendingPreparedDataExport?
+        val dataExportInProgress = values[12] as Boolean
         SettingsUiState(
             settingsState = settingsState,
             userProfile = profile ?: UserProfile(),
@@ -137,6 +150,8 @@ class SettingsViewModel @Inject constructor(
             isBackupRestoreInProgress = restoreInProgress,
             isExternalImportInProgress = externalImportInProgress,
             isWeightMutationInProgress = weightInProgress,
+            pendingPreparedDataExport = preparedDataExport,
+            isDataExportInProgress = dataExportInProgress,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -399,6 +414,59 @@ class SettingsViewModel @Inject constructor(
             displayName = displayName,
             tempFilePath = tempFilePath,
         )
+    }
+
+    // --- Data export (plaintext CSV / PDF / JSON) ---------------------------
+    //
+    // Failures surface as a toast at the call site rather than through a
+    // replaying event flow: nothing here recreates the activity, unlike the
+    // restore path whose locale change does.
+
+    suspend fun loadDataExportSummary(): DataExportSummary {
+        return dataExportService.buildSummary()
+    }
+
+    suspend fun prepareDataExport(
+        format: DataExportFormat,
+        jsonFormat: JsonExportFormat? = null,
+    ): PreparedDataExport {
+        return dataExportService.prepareExport(format = format, jsonFormat = jsonFormat)
+    }
+
+    suspend fun exportPreparedDataExport(
+        destinationUri: Uri,
+        prepared: PreparedDataExport,
+    ): DataExportExportedFile {
+        return dataExportService.exportPreparedExport(
+            destinationUri = destinationUri,
+            prepared = prepared,
+        )
+    }
+
+    suspend fun discardPreparedDataExport(prepared: PreparedDataExport) {
+        dataExportService.discardPreparedExport(prepared)
+    }
+
+    suspend fun buildJsonExportText(jsonFormat: JsonExportFormat): String {
+        return dataExportService.buildJsonText(jsonFormat)
+    }
+
+    fun setPendingPreparedDataExport(
+        displayName: String,
+        tempFilePath: String,
+    ) {
+        pendingPreparedDataExport.value = PendingPreparedDataExport(
+            displayName = displayName,
+            tempFilePath = tempFilePath,
+        )
+    }
+
+    fun clearPendingPreparedDataExport() {
+        pendingPreparedDataExport.value = null
+    }
+
+    fun setDataExportInProgress(isInProgress: Boolean) {
+        isDataExportInProgress.value = isInProgress
     }
 
     suspend fun restoreBackup(
@@ -674,9 +742,21 @@ data class SettingsUiState(
     val isBackupRestoreInProgress: Boolean = false,
     val isExternalImportInProgress: Boolean = false,
     val isWeightMutationInProgress: Boolean = false,
+    val pendingPreparedDataExport: PendingPreparedDataExport? = null,
+    val isDataExportInProgress: Boolean = false,
 )
 
 data class PendingPreparedBackupExport(
+    val displayName: String,
+    val tempFilePath: String,
+)
+
+/**
+ * An export already rendered into the cache, waiting for the user to pick a
+ * destination. Held in state so a configuration change mid-picker does not
+ * orphan the temp file.
+ */
+data class PendingPreparedDataExport(
     val displayName: String,
     val tempFilePath: String,
 )

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Table outline with a header rule and a column divider: the row icon for a
+     spreadsheet-shaped export. Built from axis-aligned rectangles rather than a
+     traced glyph so every subpath is verifiable by inspection. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:pathData="M140,200 H820 V240 H140 Z M140,720 H820 V760 H140 Z M140,240 H180 V720 H140 Z M780,240 H820 V720 H780 Z M180,320 H780 V356 H180 Z M520,356 H556 V720 H520 Z"
+      android:fillColor="#e3e3e3"/>
+</vector>

@@ -133,6 +133,20 @@ with the same collection time are ignored because they have null import
 provenance. Empty imported panels left behind after a moved result are
 deleted by the importer cleanup helper.
 
+## Export limitations
+
+The Oyama-compatible JSON export (see [data-export.md](data-export.md)) can
+carry only E2 and T readings, because that format pairs an analyte with a unit
+and no other pairing exists. Progesterone, prolactin, FSH, LH and custom
+analytes are omitted, and the export dialog reports how many records that
+costs before you confirm.
+
+E2 and T results themselves are exported losslessly whatever unit they were
+entered in: the exporter declares the canonical unit (pg/mL for E2, ng/dL for
+T) and writes `canonicalValue`, so a reading entered in pmol/L or ng/mL arrives
+correctly instead of being dropped. The CSV and PDF exports carry no such
+restriction — they include every analyte in its as-entered unit.
+
 ## `AllowedAnalyteUnit` validated type
 
 [`AllowedAnalyteUnit`](https://github.com/mkx173/Featherline/blob/main/app/src/main/java/com/mkx/hrttracker/model/bloodtest/AllowedAnalyteUnit.kt)

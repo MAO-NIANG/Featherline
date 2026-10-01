@@ -48,9 +48,31 @@ Test class naming follows `<ClassUnderTest>Test` — for example, `BloodTestCata
 
 [`.github/workflows/android-release.yml`](https://github.com/mkx173/Featherline/blob/main/.github/workflows/android-release.yml) does **not** run tests. It builds and uploads the release sideload APK only. Test gating is by maintainer review and local execution — contributors are expected to run `./gradlew testPlayDebugUnitTest` before opening a PR, and the maintainer re-runs the full unit-test suite locally before tagging a release. There is no `pull_request` workflow today; if test gating becomes a recurring problem, adding one is a small, well-scoped follow-up.
 
+## Keeping the exporter in step with the importer
+
+`OyamaJsonExportRoundTripTest` feeds `OyamaJsonExporter`'s own output into the
+real `ExternalImportParser` and asserts the result matches the source, ending
+with the invariant the pair has to hold:
+
+> The exporter must never emit a row the parser rejects.
+
+That assertion matters more than the others. A row the exporter writes and the
+parser then skips is silent data loss, and it surfaces only as "the other app is
+missing doses" long after the fact. Because Oyama's vocabulary is compared with
+exact string equality — an unrecognised `route` drops the record and an
+unrecognised `ester` is silently rewritten to estradiol — a casing change that
+looks harmless is exactly the kind of edit this test exists to catch.
+
+Anyone changing either side of the mapping should run it:
+
+```bash
+./gradlew testPlayDebugUnitTest --tests "com.mkx.hrttracker.data.export.*"
+```
+
 ## See also
 
 - [architecture.md](architecture.md) — layer map and named-thing context for what each layer's tests target.
+- [data-export.md](data-export.md) — the export formats and what each one costs.
 - [data-model.md](data-model.md) — Room schema for tests that touch the database.
 - [building.md](building.md) — Gradle commands and flavors.
 - [release-process.md](release-process.md) — pre-release verification.

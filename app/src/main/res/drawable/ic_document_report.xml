@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Page outline with text rules: the row icon for the PDF report. Built from
+     axis-aligned rectangles rather than a traced glyph so every subpath is
+     verifiable by inspection. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:pathData="M220,180 H740 V220 H220 Z M220,740 H740 V780 H220 Z M220,220 H260 V740 H220 Z M700,220 H740 V740 H700 Z M320,340 H640 V376 H320 Z M320,470 H640 V506 H320 Z M320,600 H540 V636 H320 Z"
+      android:fillColor="#e3e3e3"/>
+</vector>
