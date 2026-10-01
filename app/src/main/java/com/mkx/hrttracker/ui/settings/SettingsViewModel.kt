@@ -454,10 +454,12 @@ class SettingsViewModel @Inject constructor(
     fun setPendingPreparedDataExport(
         displayName: String,
         tempFilePath: String,
+        summary: DataExportSummary,
     ) {
         pendingPreparedDataExport.value = PendingPreparedDataExport(
             displayName = displayName,
             tempFilePath = tempFilePath,
+            summary = summary,
         )
     }
 
@@ -759,6 +761,7 @@ data class PendingPreparedBackupExport(
 data class PendingPreparedDataExport(
     val displayName: String,
     val tempFilePath: String,
+    val summary: DataExportSummary,
 )
 
 sealed class BackupRestoreEvent {

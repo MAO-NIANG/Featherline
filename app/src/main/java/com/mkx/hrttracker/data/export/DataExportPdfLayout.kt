@@ -250,19 +250,21 @@ object DataExportPdfLayout {
         var pageTop = startY
 
         fun emitHeader() {
-            val height = rowHeight(section.headers, columnWidths, PdfTextStyle.TABLE_HEADER, measurer)
-            emitRow(
+            val laidOut = layOutRow(
                 cells = section.headers,
-                style = PdfTextStyle.TABLE_HEADER,
                 columnWidths = columnWidths,
+                style = PdfTextStyle.TABLE_HEADER,
+                measurer = measurer,
+            )
+            emitRow(
+                laidOut = laidOut,
                 columnOffsets = columnOffsets,
                 rowTop = y,
-                rowHeight = height,
+                style = PdfTextStyle.TABLE_HEADER,
                 geometry = geometry,
-                measurer = measurer,
                 ops = ops,
             )
-            y += height
+            y += laidOut.height
             ops += PdfDrawOp.Rule(y)
             y += 3f
         }
@@ -270,50 +272,77 @@ object DataExportPdfLayout {
         emitHeader()
 
         section.rows.forEach { row ->
-            val height = rowHeight(row, columnWidths, PdfTextStyle.TABLE_BODY, measurer)
-            if (y + height > geometry.contentBottom && y > pageTop) {
+            val laidOut = layOutRow(row, columnWidths, PdfTextStyle.TABLE_BODY, measurer)
+            if (y + laidOut.height > geometry.contentBottom && y > pageTop) {
                 onPageBreak()
                 y = geometry.contentTop
                 pageTop = y
                 emitHeader()
             }
             emitRow(
-                cells = row,
-                style = PdfTextStyle.TABLE_BODY,
-                columnWidths = columnWidths,
+                laidOut = laidOut,
                 columnOffsets = columnOffsets,
                 rowTop = y,
-                rowHeight = height,
+                style = PdfTextStyle.TABLE_BODY,
                 geometry = geometry,
-                measurer = measurer,
                 ops = ops,
             )
-            y += height
+            y += laidOut.height
         }
         return y
     }
 
-    private fun emitRow(
+    /** A row's cells already wrapped, with the height that wrapping implies. */
+    private data class LaidOutRow(
+        val wrappedCells: List<List<String>>,
+        val height: Float,
+    )
+
+    /**
+     * Wraps every cell once.
+     *
+     * Measurement is the expensive part of the layout — with a real `Paint` each
+     * call crosses into Skia — so the wrapped lines are computed here and handed
+     * to [emitRow] rather than being recomputed there. Wrapping twice per cell
+     * measured as 67 measurer calls per row; doing it once roughly halves that.
+     */
+    private fun layOutRow(
         cells: List<String>,
-        style: PdfTextStyle,
         columnWidths: List<Float>,
+        style: PdfTextStyle,
+        measurer: TextMeasurer,
+    ): LaidOutRow {
+        var maxLines = 1
+        val wrapped = cells.mapIndexed { index, cell ->
+            val width = columnWidths.getOrNull(index)
+            val available = width?.minus(PdfMetrics.CELL_PADDING_X * 2)
+            if (available == null || available <= 0f) {
+                emptyList()
+            } else {
+                wrapText(cell, available, style, measurer).also { lines ->
+                    maxLines = maxOf(maxLines, lines.size)
+                }
+            }
+        }
+        return LaidOutRow(
+            wrappedCells = wrapped,
+            height = maxLines * PdfMetrics.lineHeight(style) + PdfMetrics.CELL_PADDING_Y * 2,
+        )
+    }
+
+    private fun emitRow(
+        laidOut: LaidOutRow,
         columnOffsets: List<Float>,
         rowTop: Float,
-        rowHeight: Float,
+        style: PdfTextStyle,
         geometry: PdfPageGeometry,
-        measurer: TextMeasurer,
         ops: MutableList<PdfDrawOp>,
     ) {
         val lineHeight = PdfMetrics.lineHeight(style)
-        cells.forEachIndexed { index, cell ->
-            val width = columnWidths.getOrNull(index) ?: return@forEachIndexed
+        laidOut.wrappedCells.forEachIndexed { index, lines ->
             val x = columnOffsets.getOrNull(index) ?: return@forEachIndexed
-            val available = width - PdfMetrics.CELL_PADDING_X * 2
-            if (available <= 0f) {
-                return@forEachIndexed
-            }
             var lineY = rowTop + PdfMetrics.CELL_PADDING_Y
-            wrapText(cell, available, style, measurer).forEach { line ->
+            lines.forEach { line ->
                 val baseline = lineY + lineHeight * 0.8f
                 // A row taller than a whole page is truncated rather than dropped:
                 // the record still appears, and the lines that fit are drawn.
@@ -329,21 +358,6 @@ object DataExportPdfLayout {
             }
         }
     }
-
-    private fun rowHeight(
-        cells: List<String>,
-        columnWidths: List<Float>,
-        style: PdfTextStyle,
-        measurer: TextMeasurer,
-    ): Float {
-        val lineHeight = PdfMetrics.lineHeight(style)
-        val maxLines = cells.mapIndexed { index, cell ->
-            val width = columnWidths.getOrNull(index) ?: return@mapIndexed 1
-            val available = width - PdfMetrics.CELL_PADDING_X * 2
-            if (available <= 0f) 1 else wrapText(cell, available, style, measurer).size
-        }.maxOrNull() ?: 1
-        return maxLines * lineHeight + PdfMetrics.CELL_PADDING_Y * 2
-    }
 }
 
 /**
@@ -353,6 +367,13 @@ object DataExportPdfLayout {
  * with no break opportunity is cut at a character boundary instead. Without that
  * fallback, a Chinese medicine name at a column edge would overflow the cell
  * rather than wrap.
+ *
+ * Grows the line one character at a time and stops at the first candidate that
+ * overflows, so the work per line is bounded by how many characters fit in the
+ * column — not by the cell's total length. A binary search over the whole cell was
+ * tried and is *worse* here: it probes prefixes of the entire remaining text, so it
+ * measures far more characters to save a handful of calls, and cells in this report
+ * are short.
  */
 internal fun wrapText(
     text: String,

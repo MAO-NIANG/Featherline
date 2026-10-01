@@ -55,13 +55,7 @@ class DataExportService @Inject constructor(
      * shown before committing is by construction the number the export honours.
      */
     suspend fun buildSummary(): DataExportSummary = withContext(Dispatchers.IO) {
-        val plan = OyamaJsonExporter.plan(buildBundle())
-        DataExportSummary(
-            doseCount = plan.totalDoseCount,
-            labCount = plan.totalLabCount,
-            representableDoseCount = plan.doses.size,
-            representableLabCount = plan.transfemLabs.size + plan.transmascLabs.size,
-        )
+        summaryOf(buildBundle())
     }
 
     /**
@@ -79,36 +73,56 @@ class DataExportService @Inject constructor(
         sweepStalePreparedExports()
 
         val displayName = buildExportFileName(format, jsonFormat, Instant.now())
+        // Resolved once and threaded through: each of these builds a localized
+        // Context, and the bundle would otherwise create the date formatters a
+        // second time while the PDF writer created the labels again.
+        val localized = context.withAppLanguage()
+        val labels = buildDataExportLabels(localized)
+        val formatters = buildDataExportDateFormatters(localized)
         val tempFile = File.createTempFile(
             PREPARED_EXPORT_PREFIX,
             PREPARED_EXPORT_SUFFIX,
             context.cacheDir,
         )
         try {
-            val bundle = buildBundle()
+            val bundle = buildBundle(localized, formatters)
             if (bundle.isEmpty) {
                 // Surfaced as a distinct type so the caller can say "there is nothing
                 // to export" rather than the generic failure message.
                 throw EmptyDataExportException()
             }
             when (format) {
-                DataExportFormat.CSV -> writeCsv(bundle, tempFile)
+                DataExportFormat.CSV -> writeCsv(bundle, labels, tempFile)
 
-                DataExportFormat.PDF -> writePdf(bundle, tempFile)
+                DataExportFormat.PDF -> writePdf(bundle, labels, formatters, tempFile)
 
                 DataExportFormat.JSON -> writeJson(
                     json = buildJsonTextInternal(bundle, checkNotNull(jsonFormat)),
                     destination = tempFile,
                 )
             }
+
+            PreparedDataExport(
+                displayName = displayName,
+                tempFilePath = tempFile.absolutePath,
+                // Computed from the bundle already in hand, so reporting what was
+                // written costs one pass over data we just built instead of a
+                // second trip to the database after the file is on disk.
+                summary = summaryOf(bundle),
+            )
         } catch (error: Exception) {
             tempFile.delete()
             throw error
         }
+    }
 
-        PreparedDataExport(
-            displayName = displayName,
-            tempFilePath = tempFile.absolutePath,
+    private fun summaryOf(bundle: DataExportBundle): DataExportSummary {
+        val plan = OyamaJsonExporter.plan(bundle)
+        return DataExportSummary(
+            doseCount = plan.totalDoseCount,
+            labCount = plan.totalLabCount,
+            representableDoseCount = plan.doses.size,
+            representableLabCount = plan.transfemLabs.size + plan.transmascLabs.size,
         )
     }
 
@@ -156,15 +170,21 @@ class DataExportService @Inject constructor(
 
     internal suspend fun buildBundle(): DataExportBundle = withContext(Dispatchers.IO) {
         val localized = context.withAppLanguage()
-        val dates = buildDataExportDateFormatters(context)
+        buildBundle(localized, buildDataExportDateFormatters(localized))
+    }
+
+    private suspend fun buildBundle(
+        localized: Context,
+        dateFormatters: DataExportDateFormatters,
+    ): DataExportBundle {
         val entries = medicationLogRepository.getEntries()
         val panels = bloodTestRepository.getPanels()
         val profile = userProfileRepository.getCurrentProfile()
 
-        DataExportBundle(
+        return DataExportBundle(
             generatedAt = Instant.now(),
-            doseRows = entries.map { entry -> entry.toExportRow(localized, dates) },
-            labRows = panels.flatMap { panel -> panel.toExportRows(dates) },
+            doseRows = entries.map { entry -> entry.toExportRow(localized, dateFormatters) },
+            labRows = panels.flatMap { panel -> panel.toExportRows(dateFormatters) },
             weightKg = profile.weightKg,
         )
     }
@@ -181,8 +201,11 @@ class DataExportService @Inject constructor(
         JsonExportFormat.OYAMA -> OyamaJsonExporter.buildJson(bundle, bundle.generatedAt)
     }
 
-    private fun writeCsv(bundle: DataExportBundle, destination: File) {
-        val labels = buildDataExportLabels(context)
+    private fun writeCsv(
+        bundle: DataExportBundle,
+        labels: DataExportLabels,
+        destination: File,
+    ) {
         destination.bufferedWriter(Charsets.UTF_8).use { writer ->
             DataExportCsvEncoder.write(bundle, labels, writer)
         }
@@ -192,9 +215,12 @@ class DataExportService @Inject constructor(
         destination.writeText(json, Charsets.UTF_8)
     }
 
-    private fun writePdf(bundle: DataExportBundle, destination: File) {
-        val labels = buildDataExportLabels(context)
-        val dates = buildDataExportDateFormatters(context)
+    private fun writePdf(
+        bundle: DataExportBundle,
+        labels: DataExportLabels,
+        dates: DataExportDateFormatters,
+        destination: File,
+    ) {
         val model = buildPdfDocumentModel(bundle, labels, dates)
         destination.outputStream().use { outputStream ->
             pdfRenderer.render(

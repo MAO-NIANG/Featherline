@@ -234,6 +234,54 @@ class DataExportPdfLayoutTest {
     }
 
     @Test
+    fun `each cell is measured once rather than once per layout pass`() {
+        // Measuring is the expensive half of the layout — with a real Paint each
+        // call crosses into Skia — and the height pass used to wrap every cell a
+        // second time, which measured as 67 measurer calls per row. This is a guard
+        // against reintroducing that second pass, not a pin on the wrapper's
+        // internals, so the budget is set well above the current cost.
+        val counting = object : TextMeasurer {
+            var calls = 0
+            override fun width(text: String, style: PdfTextStyle): Float {
+                calls++
+                return text.length * 5f
+            }
+        }
+        val rows = (1..200).map {
+            listOf("row number $it", "22:11", "戊酸雌二醇", "舌下", "2 片 · 2 mg", "0.76")
+        }
+
+        DataExportPdfLayout.layout(documentName(rows), counting)
+
+        val perRow = counting.calls.toDouble() / rows.size
+        assertTrue(
+            "Expected well under 67 measurer calls per row, saw $perRow",
+            perRow < 30.0,
+        )
+    }
+
+    @Test
+    fun `wrapping cost is bounded by the column, not by the cell's length`() {
+        // The wrapper stops at the first candidate that overflows, so a very long
+        // cell must not cost proportionally more than a short one per line.
+        val counting = object : TextMeasurer {
+            var characters = 0L
+            override fun width(text: String, style: PdfTextStyle): Float {
+                characters += text.length
+                return text.length * 5f
+            }
+        }
+
+        wrapText("word ".repeat(40), maxWidth = 100f, PdfTextStyle.TABLE_BODY, counting)
+
+        // 200 characters at 20 per line: about 210 measured characters per line.
+        assertTrue(
+            "Measured ${counting.characters} characters for a 200-char cell",
+            counting.characters < 4_000,
+        )
+    }
+
+    @Test
     fun `wraps latin text at spaces`() {
         val lines = wrapText("hello world", maxWidth = 30f, PdfTextStyle.TABLE_BODY, monospaceMeasurer)
 

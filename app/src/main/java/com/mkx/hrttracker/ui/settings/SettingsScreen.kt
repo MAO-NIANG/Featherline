@@ -484,26 +484,24 @@ fun SettingsScreen(
     // An Oyama export carries only what that format can express, so its message
     // reports the surviving counts and names the shortfall rather than implying
     // everything was written.
-    suspend fun buildDataExportSuccessMessage(
-        exportedFormat: DataExportFormat,
+    //
+    // Reads the counts off the payload that was just written rather than querying
+    // the database again: the file is already on disk by now, and a failed
+    // re-query must not turn a successful export into an error message.
+    fun dataExportSuccessMessage(
+        summary: DataExportSummary,
         exportedJsonFormat: JsonExportFormat?,
     ): String {
-        val summary = runCatching { viewModel.loadDataExportSummary() }.getOrNull()
-            ?: return dataExportFailedMessage
-        val isOyama = exportedFormat == DataExportFormat.JSON &&
-            exportedJsonFormat == JsonExportFormat.OYAMA
-        val doses = if (isOyama) summary.representableDoseCount else summary.doseCount
-        val labs = if (isOyama) summary.representableLabCount else summary.labCount
-        val omitted = if (isOyama) summary.omittedDoseCount + summary.omittedLabCount else 0
-        return if (omitted > 0) {
+        val report = summary.reportFor(oyamaCompatible = exportedJsonFormat == JsonExportFormat.OYAMA)
+        return if (report.omitted > 0) {
             context.getString(
                 R.string.settings_export_success_with_omissions,
-                doses,
-                labs,
-                omitted,
+                report.doses,
+                report.labs,
+                report.omitted,
             )
         } else {
-            context.getString(R.string.settings_export_success, doses, labs)
+            context.getString(R.string.settings_export_success, report.doses, report.labs)
         }
     }
 
@@ -512,13 +510,14 @@ fun SettingsScreen(
     // extension. All three share the same completion path below.
     fun completeDataExport(
         destinationUri: Uri?,
-        exportedFormat: DataExportFormat,
         exportedJsonFormat: JsonExportFormat?,
     ) {
-        val prepared = uiState.pendingPreparedDataExport?.let { pending ->
+        val pending = uiState.pendingPreparedDataExport
+        val prepared = pending?.let {
             PreparedDataExport(
-                displayName = pending.displayName,
-                tempFilePath = pending.tempFilePath,
+                displayName = it.displayName,
+                tempFilePath = it.tempFilePath,
+                summary = it.summary,
             )
         }
         if (destinationUri == null) {
@@ -532,7 +531,7 @@ fun SettingsScreen(
             }
             return
         }
-        if (prepared == null) {
+        if (prepared == null || pending == null) {
             viewModel.clearPendingPreparedDataExport()
             Toast.makeText(context, dataExportFailedMessage, Toast.LENGTH_SHORT).show()
             return
@@ -543,7 +542,7 @@ fun SettingsScreen(
                 viewModel.exportPreparedDataExport(destinationUri, prepared)
                 Toast.makeText(
                     context,
-                    buildDataExportSuccessMessage(exportedFormat, exportedJsonFormat),
+                    dataExportSuccessMessage(pending.summary, exportedJsonFormat),
                     Toast.LENGTH_SHORT,
                 ).show()
             } catch (_: Exception) {
@@ -558,17 +557,17 @@ fun SettingsScreen(
     val csvDataExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(DataExportService.CSV_MIME_TYPE)
     ) { destinationUri ->
-        completeDataExport(destinationUri, DataExportFormat.CSV, null)
+        completeDataExport(destinationUri, exportedJsonFormat = null)
     }
     val pdfDataExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(DataExportService.PDF_MIME_TYPE)
     ) { destinationUri ->
-        completeDataExport(destinationUri, DataExportFormat.PDF, null)
+        completeDataExport(destinationUri, exportedJsonFormat = null)
     }
     val jsonDataExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(DataExportService.JSON_MIME_TYPE)
     ) { destinationUri ->
-        completeDataExport(destinationUri, DataExportFormat.JSON, selectedJsonExportFormat)
+        completeDataExport(destinationUri, exportedJsonFormat = selectedJsonExportFormat)
     }
 
     fun startDataExport(
@@ -585,6 +584,7 @@ fun SettingsScreen(
                 viewModel.setPendingPreparedDataExport(
                     displayName = prepared.displayName,
                     tempFilePath = prepared.tempFilePath,
+                    summary = prepared.summary,
                 )
                 val launcher = when (exportedFormat) {
                     DataExportFormat.CSV -> csvDataExportLauncher

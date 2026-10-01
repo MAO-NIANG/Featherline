@@ -39,7 +39,14 @@ object DataExportCsvEncoder {
         }
     }
 
-    /** Convenience for tests; production streams through [write] instead. */
+    /**
+     * Convenience for tests — returns one String.
+     *
+     * Production goes through [write], which appends to the sink instead of building
+     * a String. It still materializes the row set first, because doses and labs are
+     * merged into one chronological order and that needs every sort key before the
+     * first record can be emitted; at 20k rows that costs ~24 ms and a few MB.
+     */
     fun encodeToString(
         bundle: DataExportBundle,
         labels: DataExportLabels,

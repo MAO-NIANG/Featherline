@@ -126,7 +126,34 @@ data class DataExportSummary(
 
     val isEmpty: Boolean
         get() = doseCount == 0 && labCount == 0
+
+    /**
+     * The figures to quote for an export in the given format.
+     *
+     * An Oyama-compatible file holds only the representable rows, so its report
+     * has to name the shortfall; every other format writes everything and has
+     * nothing to declare. Kept here rather than in the composable so the choice is
+     * unit-testable — reporting the wrong count is how a lossy export stops being
+     * honest.
+     */
+    fun reportFor(oyamaCompatible: Boolean): DataExportReport =
+        if (oyamaCompatible) {
+            DataExportReport(
+                doses = representableDoseCount,
+                labs = representableLabCount,
+                omitted = omittedDoseCount + omittedLabCount,
+            )
+        } else {
+            DataExportReport(doses = doseCount, labs = labCount, omitted = 0)
+        }
 }
+
+/** What a finished export should tell the user it wrote. */
+data class DataExportReport(
+    val doses: Int,
+    val labs: Int,
+    val omitted: Int,
+)
 
 /**
  * An export rendered into a cache temp file, awaiting the user's choice of
@@ -136,6 +163,15 @@ data class DataExportSummary(
 data class PreparedDataExport(
     val displayName: String,
     val tempFilePath: String,
+    /**
+     * What this payload actually contains.
+     *
+     * Carried on the prepared export rather than re-queried after the write, so
+     * the confirmation the user sees describes the file that was just saved — and
+     * so a failure to re-read the database can never turn a successful export into
+     * an error message.
+     */
+    val summary: DataExportSummary,
 )
 
 data class DataExportExportedFile(

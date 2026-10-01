@@ -72,10 +72,21 @@ class DataExportServiceTest {
             zoneId = ZoneId.of("UTC"),
         )
 
+    private fun anySummary(): DataExportSummary = DataExportSummary(
+        doseCount = 3,
+        labCount = 1,
+        representableDoseCount = 2,
+        representableLabCount = 1,
+    )
+
     private fun preparedFile(contents: ByteArray = byteArrayOf(1, 2, 3)): PreparedDataExport {
         val file = File(cacheDir, "prepared-export-test.tmp")
         file.writeBytes(contents)
-        return PreparedDataExport(displayName = "export.csv", tempFilePath = file.absolutePath)
+        return PreparedDataExport(
+            displayName = "export.csv",
+            tempFilePath = file.absolutePath,
+            summary = anySummary(),
+        )
     }
 
     /** Runs a suspend export and returns the IOException it must raise. */
@@ -129,6 +140,7 @@ class DataExportServiceTest {
         val prepared = PreparedDataExport(
             displayName = "export.csv",
             tempFilePath = File(cacheDir, "never-written.tmp").absolutePath,
+            summary = anySummary(),
         )
 
         val failure = expectIOException {
